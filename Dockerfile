@@ -20,12 +20,18 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-# Wichtig: Temp-Verzeichnis für PDFBox
-RUN mkdir -p /tmp/pdfbox && chmod 777 /tmp/pdfbox
-
 # Non-root user (Security)
-RUN addgroup -S spring && adduser -S spring -G spring && \
-    chown -R spring:spring /tmp/pdfbox
+RUN addgroup -S spring && adduser -S spring -G spring
+
+# CRITICAL: Create writable temp directories for Spring Boot + PDFBox
+# /tmp must be writable for general temp operations
+# /tmp/tomcat for Tomcat base temp dir (configured in application.properties)
+# /tmp/pdfbox for PDFBox operations
+RUN mkdir -p /tmp /tmp/tomcat /tmp/pdfbox && \
+    chown -R spring:spring /tmp && \
+    chmod -R 777 /tmp
+
+# Switch to non-root user
 USER spring:spring
 
 # JAR kopieren
