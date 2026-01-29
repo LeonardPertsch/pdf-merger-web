@@ -2,16 +2,8 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
-    <groupId>com.pdfmerger</groupId>
-    <artifactId>pdf-merger-web</artifactId>
-    <version>1.0.0</version>
-    <packaging>jar</packaging>
-
-    <n>PDF Merger Web</n>
-    <description>Web-based PDF Merger with Drag and Drop</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -19,6 +11,14 @@
         <version>3.2.1</version>
         <relativePath/>
     </parent>
+
+    <groupId>com.pdfmerger</groupId>
+    <artifactId>pdf-merger-web</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>PDF Merger Web</name>
+    <description>Web-based PDF Merger with Drag and Drop</description>
 
     <properties>
         <java.version>17</java.version>
@@ -38,6 +38,8 @@
             <version>3.0.1</version>
         </dependency>
 
+        <!-- Nicht nötig für Spring Boot Multipart-Uploads (Tomcat kann das).
+             Nur drin lassen, wenn du es wirklich explizit nutzt. -->
         <dependency>
             <groupId>commons-fileupload</groupId>
             <artifactId>commons-fileupload</artifactId>
@@ -56,14 +58,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-                <configuration>
-                    <encoding>UTF-8</encoding>
-                </configuration>
             </plugin>
         </plugins>
     </build>
