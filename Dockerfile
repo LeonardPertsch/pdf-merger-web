@@ -1,35 +1,55 @@
-# Multi-stage build for smaller image size
+# ====================================
+# RENDER-OPTIMIZED DOCKERFILE
+# ====================================
+# Multi-stage build für minimale Image-Größe
 
 # Stage 1: Build
 FROM maven:3.9-eclipse-temurin-17-alpine AS build
 WORKDIR /app
 
-# Copy pom.xml and download dependencies (cached layer)
+# Dependencies cachen
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
-# Copy source code and build
+# Source code und build
 COPY src ./src
 RUN mvn clean package -DskipTests
 
-# Stage 2: Runtime
+# Stage 2: Runtime (minimalistisch!)
 FROM eclipse-temurin:17-jre-alpine
+
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup -S spring && adduser -S spring -G spring
+# Wichtig: Temp-Verzeichnis für PDFBox
+RUN mkdir -p /tmp/pdfbox && chmod 777 /tmp/pdfbox
+
+# Non-root user (Security)
+RUN addgroup -S spring && adduser -S spring -G spring && \
+    chown -R spring:spring /tmp/pdfbox
 USER spring:spring
 
-# Copy JAR from build stage
+# JAR kopieren
 COPY --from=build /app/target/pdf-merger-web-*.jar app.jar
 
-# Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+# Health check (Render nutzt das)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
 
-# Run the application
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseG1GC -Djava.io.tmpdir=/tmp"
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# ====================================
+# JVM TUNING FÜR RENDER FREE (512MB)
+# ====================================
+ENV JAVA_TOOL_OPTIONS="\
+  -XX:+UseContainerSupport \
+  -XX:MaxRAMPercentage=70 \
+  -XX:InitialRAMPercentage=50 \
+  -XX:+UseG1GC \
+  -XX:MaxGCPauseMillis=100 \
+  -XX:+DisableExplicitGC \
+  -Djava.io.tmpdir=/tmp/pdfbox \
+  -Djava.security.egd=file:/dev/./urandom \
+  -Dspring.backgroundpreinitializer.ignore=true"
+
+# Entrypoint
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -31,46 +31,58 @@ public class PdfMergerController {
             return ResponseEntity.badRequest().build();
         }
 
-        // Erst in /tmp spulen (wenig Heap auf Render)
+        // Validation: Nur PDFs erlauben
+        for (MultipartFile file : files) {
+            String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
+            if (!original.endsWith(".pdf")) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+
+        // Temp files speichern (KRITISCH für Render - nicht im RAM halten!)
         final List<Path> tempFiles = new ArrayList<>();
 
         try {
+            // Dateien sofort auf Disk schreiben
             for (MultipartFile file : files) {
-                String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
-                if (!original.endsWith(".pdf")) {
-                    return ResponseEntity.badRequest().build();
-                }
-            }
-
-            for (MultipartFile file : files) {
-                Path tmp = Files.createTempFile("pdf-merge-", ".pdf");
+                Path tmp = Files.createTempFile("pdf-", ".pdf");
                 tempFiles.add(tmp);
                 try (InputStream in = file.getInputStream()) {
                     Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
                 }
             }
 
+            // Filename bereinigen
             if (!filename.toLowerCase().endsWith(".pdf")) {
                 filename += ".pdf";
             }
             String finalFilename = filename;
 
+            // WICHTIG: Streaming Response - kein großer Buffer im RAM!
             StreamingResponseBody stream = outputStream -> {
                 try {
                     PDFMergerUtility pdfMerger = new PDFMergerUtility();
+
+                    // Files hinzufügen
                     for (Path p : tempFiles) {
                         pdfMerger.addSource(p.toFile());
                     }
+
                     pdfMerger.setDestinationStream(outputStream);
 
-                    // PDFBox 3.x: StreamCacheCreateFunction statt MemoryUsageSetting
-                    // Tempfile-only Cache reduziert Heap-Spikes
+                    // 🚀 KRITISCH für Render: Temp-file basiertes Caching
+                    // PDFBox 3.x nutzt StreamCacheCreateFunction
+                    // IOUtils.createTempFileOnlyStreamCache() = kein RAM, nur Disk!
                     pdfMerger.mergeDocuments(IOUtils.createTempFileOnlyStreamCache());
+
                     outputStream.flush();
+
                 } finally {
-                    // Tempfiles erst NACH dem Merge löschen
+                    // Cleanup NACH dem Merge
                     for (Path p : tempFiles) {
-                        try { Files.deleteIfExists(p); } catch (IOException ignored) {}
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {}
                     }
                 }
             };
@@ -81,9 +93,11 @@ public class PdfMergerController {
                     .body(stream);
 
         } catch (IOException e) {
-            // Falls schon vor dem Streaming etwas schiefgeht, Tempfiles hier aufräumen
+            // Cleanup bei Fehler
             for (Path p : tempFiles) {
-                try { Files.deleteIfExists(p); } catch (IOException ignored) {}
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {}
             }
             e.printStackTrace();
             return ResponseEntity.internalServerError().build();
@@ -93,5 +107,38 @@ public class PdfMergerController {
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("PDF Merger Service is running!");
+    }
+
+    // Bonus: Validate Endpoint für Debugging
+    @PostMapping("/validate")
+    public ResponseEntity<String> validatePdfs(@RequestParam("files") MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            return ResponseEntity.badRequest().body("No files uploaded");
+        }
+
+        StringBuilder info = new StringBuilder();
+        info.append("Files: ").append(files.length).append("\n");
+
+        long totalSize = 0;
+        for (int i = 0; i < files.length; i++) {
+            MultipartFile file = files[i];
+            totalSize += file.getSize();
+            info.append(String.format("%d. %s - %.2f MB\n",
+                    i + 1,
+                    file.getOriginalFilename(),
+                    file.getSize() / (1024.0 * 1024.0)));
+        }
+
+        info.append(String.format("\nTotal: %.2f MB\n", totalSize / (1024.0 * 1024.0)));
+
+        // Render Free Limit: ~100 MB sicher
+        if (totalSize > 100 * 1024 * 1024) {
+            info.append("⚠️ WARNING: Total size exceeds recommended Render Free limits!\n");
+            info.append("Consider:\n");
+            info.append("- Upgrading to Render Starter ($7/mo)\n");
+            info.append("- Or reducing file sizes\n");
+        }
+
+        return ResponseEntity.ok(info.toString());
     }
 }
